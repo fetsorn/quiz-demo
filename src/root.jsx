@@ -244,6 +244,24 @@ function reducer(state, action) {
         }
       }
     }
+    case 'redistributed': {
+      return {
+        ...state,
+        hasRedistributed: true,
+        alice: {
+          ...state.alice,
+          balance: action.balanceAlice
+        },
+        bob: {
+          ...state.bob,
+          balance: action.balanceBob
+        },
+        tony: {
+          ...state.tony,
+          balance: action.balanceTony
+        }
+      }
+    }
     case 'verified_correct': {
       return {
         ...state,
@@ -305,7 +323,8 @@ const initialState = {
   gatheringID: undefined,
   ceremonyID: undefined,
   quizID: undefined,
-  hasEndedQuiz: undefined,
+  hasEndedQuiz: false,
+  hasRedistributed: false,
   correct: {
     guess: {
       0: "banana",
@@ -539,14 +558,14 @@ function Page() {
   }
 
   function commit(answers) {
-    const salt = window.crypto.randomUUID();
+    const salt = ethers.id(window.crypto.randomUUID());
 
-    const saltHash = "0x" + CryptoJS.SHA256(salt).toString(CryptoJS.enc.Hex);
+    const saltHash = ethers.keccak256(salt);
 
     const hashes = answers
-          .map(answer => state.quiz[answer])
-          .map(uuid => CryptoJS.SHA256(`${uuid}${salt}`))
-          .map(hash => "0x" + hash.toString(CryptoJS.enc.Hex));
+          .map(answer => ethers.toUtf8Bytes(state.quiz[answer]))
+          .map(uuid => ethers.concat([uuid, salt]))
+          .map(guess => ethers.keccak256(guess));
 
     return [salt, saltHash, hashes]
   }
@@ -606,7 +625,9 @@ function Page() {
 
     const [salt, saltHash, hashes] = commit(guesses);
 
-    const tx = await state.quizMC.connect(state.alice.signer).commitGuess(state.quizID, saltHash, hashes);
+    const tx = await state.quizMC
+        .connect(state.alice.signer)
+        .commitGuess(state.quizID, saltHash, hashes);
 
     await tx.wait();
 
@@ -628,7 +649,9 @@ function Page() {
 
     const [salt, saltHash, hashes] = commit(guesses);
 
-    const tx = await state.quizMC.connect(state.bob.signer).commitGuess(state.quizID, saltHash, hashes);
+    const tx = await state.quizMC
+        .connect(state.bob.signer)
+        .commitGuess(state.quizID, saltHash, hashes);
 
     await tx.wait();
 
@@ -650,7 +673,9 @@ function Page() {
 
     const [salt, saltHash, hashes] = commit(guesses);
 
-    const tx = await state.quizMC.connect(state.tony.signer).commitGuess(state.quizID, saltHash, hashes);
+    const tx = await state.quizMC
+        .connect(state.tony.signer)
+        .commitGuess(state.quizID, saltHash, hashes);
 
     await tx.wait();
 
@@ -668,7 +693,21 @@ function Page() {
   async function endQuiz() {
     dispatch({type: "started"});
 
-    const tx = await state.quizMC.completeQuiz(state.quizID);
+    const tx = await state.quizMC.endQuiz(state.quizID);
+
+    await tx.wait();
+
+    dispatch({
+      type: "ended_quiz",
+    });
+
+    dispatch({type: "finished"});
+  }
+
+  async function redistribute() {
+    dispatch({type: "started"});
+
+    const tx = await state.quizMC.redistribute(state.quizID);
 
     await tx.wait();
 
@@ -679,7 +718,7 @@ function Page() {
     const balanceTony = await state.token.balanceOf(addressTony);
 
     dispatch({
-      type: "ended_quiz",
+      type: "redistributed",
       balanceAlice,
       balanceBob,
       balanceTony
@@ -691,10 +730,12 @@ function Page() {
   async function revealCorrect() {
     dispatch({type: "started"});
 
+    const guesses = state.correct.guesses.map(answer => ethers.toUtf8Bytes(state.quiz[answer]));
+
     const tx = await state.quizMC.revealCorrect(
       state.quizID,
       state.correct.salt,
-      state.correct.guesses
+      guesses
     );
 
     await tx.wait();
@@ -709,10 +750,12 @@ function Page() {
   async function revealAlice() {
     dispatch({type: "started"});
 
+    const guesses = state.alice.guesses.map(answer => ethers.toUtf8Bytes(state.quiz[answer]));
+
     const tx = await state.quizMC.connect(state.alice.signer).revealGuess(
       state.quizID,
       state.alice.salt,
-      state.alice.guesses
+      guesses
     );
 
     await tx.wait();
@@ -727,10 +770,12 @@ function Page() {
   async function revealBob() {
     dispatch({type: "started"});
 
+    const guesses = state.bob.guesses.map(answer => ethers.toUtf8Bytes(state.quiz[answer]));
+
     const tx = await state.quizMC.connect(state.bob.signer).revealGuess(
       state.quizID,
       state.bob.salt,
-      state.bob.guesses
+      guesses
     );
 
     await tx.wait();
@@ -745,10 +790,12 @@ function Page() {
   async function revealTony() {
     dispatch({type: "started"});
 
+    const guesses = state.tony.guesses.map(answer => ethers.toUtf8Bytes(state.quiz[answer]));
+
     const tx = await state.quizMC.connect(state.tony.signer).revealGuess(
       state.quizID,
       state.tony.salt,
-      state.tony.guesses
+      guesses
     );
 
     await tx.wait();
@@ -761,13 +808,13 @@ function Page() {
   }
 
   function verifySalt(salt, saltHash) {
-    return saltHash === CryptoJS.SHA256(salt).toString(CryptoJS.enc.Hex);
+    return saltHash === ethers.keccak256(salt);
   }
 
   async function verifySaltCorrect() {
     dispatch({type: "started"});
 
-    const saltHash = await state.quizMC.getSaltHash(state.quizMC.target);
+    const saltHash = await state.quizMC.getSaltHash(state.quizID, state.quizMC.target);
 
     const isVerified = verifySalt(state.correct.salt, saltHash);
 
@@ -779,7 +826,7 @@ function Page() {
   async function verifySaltAlice() {
     dispatch({type: "started"});
 
-    const saltHash = await state.quizMC.getSaltHash(addressAlice);
+    const saltHash = await state.quizMC.getSaltHash(state.quizID, addressAlice);
 
     const isVerified = verifySalt(state.alice.salt, saltHash);
 
@@ -791,7 +838,7 @@ function Page() {
   async function verifySaltBob() {
     dispatch({type: "started"});
 
-    const saltHash = await state.quizMC.getSaltHash(addressBob);
+    const saltHash = await state.quizMC.getSaltHash(state.quizID, addressBob);
 
     const isVerified = verifySalt(state.bob.salt, saltHash);
 
@@ -803,7 +850,7 @@ function Page() {
   async function verifySaltTony() {
     dispatch({type: "started"});
 
-    const saltHash = await state.quizMC.getSaltHash(addressTony);
+    const saltHash = await state.quizMC.getSaltHash(state.quizID, addressTony);
 
     const isVerified = verifySalt(state.tony.salt, saltHash);
 
@@ -813,15 +860,18 @@ function Page() {
   }
 
   async function verifyGuess(address, answers) {
-    const hashes = await state.quizMC.getHashes(address);
+    const committed = await state.quizMC.getHashes(state.quizID, address);
 
-    const salt = await state.quizMC.getSalt(address);
+    const salt = await state.quizMC.getSalt(state.quizID, address);
 
-    const leaves = answers
-          .map(answer => state.quiz[answer])
-          .map(uuid => CryptoJS.SHA256(`${uuid}${salt}`));
+    const revealed = answers
+          .map(answer => ethers.toUtf8Bytes(state.quiz[answer]))
+          .map(uuid => ethers.concat([uuid, salt]))
+          .map(guess => ethers.keccak256(guess));
 
-    return hashes == leaves;
+    console.log(committed, revealed)
+
+    return revealed.every((element, index) => element === committed[index]);
   }
 
   async function verifyGuessCorrect() {
@@ -984,6 +1034,14 @@ function Page() {
           </div>
         )}
 
+        {state.correct.hasRevealed &&
+         state.alice.hasRevealed &&
+         state.bob.hasRevealed &&
+         state.tony.hasRevealed &&
+         !state.hasRedistributed && (
+          <button onClick={redistribute}>redistribute</button>
+        )}
+
         <br/>
 
         <div>
@@ -1017,11 +1075,11 @@ function Page() {
                 <div>
                   <div>
                     <span>first answer hash: {state.alice.hashes[0].substring(0, 5)}...</span>
-                    <Copy text={state.correct.guess[0]}/>
+                    <Copy text={state.alice.hashes[0]}/>
                   </div>
                   <div>
                     <span>second answer hash: {state.alice.hashes[1].substring(0, 5)}...</span>
-                    <Copy text={state.correct.guess[1]}/>
+                    <Copy text={state.alice.hashes[1]}/>
                   </div>
                 </div>
               )}
@@ -1037,7 +1095,7 @@ function Page() {
               {state.alice.hasRevealed && (
                 <div>
                   <span>salt of Alice: {state.alice.salt.substring(0, 5)}...</span>
-                  <Copy text={state.alice.alice}/>
+                  <Copy text={state.alice.salt}/>
                   {state.alice.isVerified.salt === undefined && (
                     <button onClick={verifySaltAlice}>verify</button>
                   )}
@@ -1079,11 +1137,11 @@ function Page() {
                 <div>
                   <div>
                     <span>first answer hash: {state.bob.hashes[0].substring(0, 5)}...</span>
-                    <Copy text={state.correct.guess[0]}/>
+                    <Copy text={state.bob.hashes[0]}/>
                   </div>
                   <div>
                     <span>second answer hash: {state.bob.hashes[1].substring(0, 5)}...</span>
-                    <Copy text={state.correct.guess[1]}/>
+                    <Copy text={state.bob.hashes[1]}/>
                   </div>
                 </div>
               )}
@@ -1141,11 +1199,11 @@ function Page() {
                 <div>
                   <div>
                     <span>first answer hash: {state.tony.hashes[0].substring(0, 5)}...</span>
-                    <Copy text={state.correct.guess[0]}/>
+                    <Copy text={state.tony.hashes[0]}/>
                   </div>
                   <div>
                     <span>second answer hash: {state.tony.hashes[1].substring(0, 5)}...</span>
-                    <Copy text={state.correct.guess[1]}/>
+                    <Copy text={state.tony.hashes[1]}/>
                   </div>
                 </div>
               )}
