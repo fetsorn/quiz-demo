@@ -36,7 +36,7 @@
           buildPhase = ''
             yarn run build
           '';
-          installPhase = "cp -r ./deps/${name}/release/renderer $out";
+          installPhase = "cp -r ./deps/${name}/release $out";
           distPhase = "true";
         };
       in rec {
