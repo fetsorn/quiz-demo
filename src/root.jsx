@@ -1,13 +1,10 @@
 import React, { useState, useEffect, useReducer } from 'react';
-import { useTranslation } from 'react-i18next';
 import {
   HashRouter as Router,
   Routes,
   Route,
   useLocation,
 } from 'react-router-dom';
-import Parser from 'rss-parser';
-import { useStore } from '@/store/index.js';
 import styles from './root.module.css';
 import {
   addressAlice,
@@ -20,7 +17,7 @@ import {
   addressQuizMC,
   addressToken,
   addressProportional
-} from '@/constants.js';
+} from './constants.js';
 import { ethers } from 'ethers';
 import CryptoJS from 'crypto-js';
 import CopyIcon from './copy.svg';
