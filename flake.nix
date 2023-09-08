@@ -26,21 +26,19 @@
         nodeVersion =
           builtins.elemAt (pkgs.lib.versions.splitVersion pkgs.nodejs.version)
           0;
-        webappDrv = buildMode:
-          pkgs.mkYarnPackage rec {
-            name = package.name;
-            version = package.version;
-            src = pkgs.nix-gitignore.gitignoreSource [ ".git" ] ./.;
-            preConfigure = ''
-              substituteInPlace package.json --replace "webpack --config webpack.web.config.mjs" "yarn exec webpack-cli -- --mode=development --config webpack.web.config.mjs --env buildMode=${buildMode}"
-            '';
-            buildPhase = ''
-              yarn run webapp:build
-            '';
-            installPhase = "cp -r ./deps/${name}/release/renderer $out";
-            distPhase = "true";
-          };
-        webapp = webappDrv "webapp";
+        webapp = pkgs.mkYarnPackage rec {
+          name = package.name;
+          version = package.version;
+          src = pkgs.nix-gitignore.gitignoreSource [ ".git" ] ./.;
+          preConfigure = ''
+            substituteInPlace package.json --replace "webpack --config webpack.web.config.mjs" "yarn exec webpack-cli -- --mode=development --config webpack.web.config.mjs"
+          '';
+          buildPhase = ''
+            yarn run build
+          '';
+          installPhase = "cp -r ./deps/${name}/release/renderer $out";
+          distPhase = "true";
+        };
       in rec {
         packages = { inherit webapp; };
         defaultPackage = packages.webapp;
