@@ -4,9 +4,14 @@ import {
   Routes,
   Route,
 } from 'react-router-dom';
-import { DefaultBundle, PolywrapClient } from '@polywrap/client-js';
-import { PolywrapProvider, usePolywrapClient } from '@polywrap/react';
+import { PolywrapClient } from '@polywrap/client-js';
 import { PolywrapClientConfigBuilder } from '@polywrap/client-config-builder-js';
+import {
+  ethereumWalletPlugin,
+  Connections,
+  Connection,
+} from '@polywrap/ethereum-wallet-js';
+import { Wallet } from 'ethers';
 import CopyIcon from './copy.svg';
 import {
   wrapperURI,
@@ -24,15 +29,11 @@ import {
 import styles from './root.module.css';
 
 export function Root() {
-  const defaultConfig = DefaultBundle.getConfig();
-
   return (
     <Router>
-      <PolywrapProvider {...defaultConfig}>
-        <Routes>
-          <Route index element={<Page />} />
-        </Routes>
-      </PolywrapProvider>
+      <Routes>
+        <Route index element={<Page />} />
+      </Routes>
     </Router>
   );
 }
@@ -61,6 +62,7 @@ function reducer(state, action) {
         // arcoiris: action.arcoiris,
         // quizMC: action.quizMC,
         client: action.clientPoller,
+        signerAddress: action.signerAddress,
         alice: {
           ...state.alice,
           // signer: action.signerAlice,
@@ -325,6 +327,7 @@ const initialState = {
   hasConnected: false,
   // provider: undefined,
   // signer: undefined,
+  signerAddress: undefined,
   uri: wrapperURI,
   client: undefined,
   quiz: undefined,
@@ -407,26 +410,59 @@ const initialState = {
   },
 };
 
+function createClient(pk) {
+  const builder = new PolywrapClientConfigBuilder();
+
+  builder.addDefaults();
+
+  builder.setPackage(
+    'plugin/ethereum-wallet',
+    ethereumWalletPlugin({
+      connections: new Connections({
+        networks: {
+          mainnet: pk
+            ? new Connection({
+              provider: window.ethereum,
+              signer: new Wallet(pk),
+            })
+            : new Connection({
+              provider: window.ethereum,
+            }),
+        },
+      }),
+    }),
+  );
+
+  builder.setRedirect(
+    'wrap://ens/wraps.eth:ethereum-provider@2.0.0',
+    'plugin/ethereum-wallet',
+  );
+
+  return new PolywrapClient(builder.build());
+}
+
 function Page() {
   const [state, dispatch] = useReducer(reducer, initialState);
 
   async function connectWallet() {
     dispatch({ type: 'started' });
 
-    const clientPoller = usePolywrapClient();
+    const clientPoller = createClient();
 
-    // TODO: figure out how to connect config to alice wallet
-    const clientAlice = new PolywrapClient(
-      new PolywrapClientConfigBuilder().addDefaults().build(),
-    );
+    await window.ethereum.request({
+      method: 'eth_requestAccounts',
+    });
 
-    const clientBob = new PolywrapClient(
-      new PolywrapClientConfigBuilder().addDefaults().build(),
-    );
+    const { value: signerAddress } = await clientPoller.invoke({
+      uri: 'plugin/ethereum-wallet',
+      method: 'signerAddress',
+    });
 
-    const clientTony = new PolywrapClient(
-      new PolywrapClientConfigBuilder().addDefaults().build(),
-    );
+    const clientAlice = createClient(pkAlice);
+
+    const clientBob = createClient(pkBob);
+
+    const clientTony = createClient(pkTony);
 
     // const provider = new ethers.BrowserProvider(window.ethereum);
 
@@ -456,6 +492,7 @@ function Page() {
       uri,
       method: 'balanceOf',
       args: {
+        token: addressToken,
         address: addressAlice,
       },
     });
@@ -464,6 +501,7 @@ function Page() {
       uri,
       method: 'balanceOf',
       args: {
+        token: addressToken,
         address: addressBob,
       },
     });
@@ -472,6 +510,7 @@ function Page() {
       uri,
       method: 'balanceOf',
       args: {
+        token: addressToken,
         address: addressTony,
       },
     });
@@ -490,6 +529,7 @@ function Page() {
       balanceBob,
       balanceTony,
       clientPoller,
+      signerAddress,
       clientAlice,
       clientBob,
       clientTony,
@@ -605,6 +645,7 @@ function Page() {
       uri,
       method: 'balanceOf',
       args: {
+        token: addressToken,
         address: addressAlice,
       },
     });
@@ -662,6 +703,7 @@ function Page() {
       uri,
       method: 'balanceOf',
       args: {
+        token: addressToken,
         address: addressBob,
       },
     });
@@ -719,6 +761,7 @@ function Page() {
       uri,
       method: 'balanceOf',
       args: {
+        token: addressToken,
         address: addressTony,
       },
     });
@@ -985,6 +1028,7 @@ function Page() {
       uri,
       method: 'balanceOf',
       args: {
+        token: addressToken,
         address: addressAlice,
       },
     });
@@ -993,6 +1037,7 @@ function Page() {
       uri,
       method: 'balanceOf',
       args: {
+        token: addressToken,
         address: addressBob,
       },
     });
@@ -1001,6 +1046,7 @@ function Page() {
       uri,
       method: 'balanceOf',
       args: {
+        token: addressToken,
         address: addressTony,
       },
     });
@@ -1325,20 +1371,12 @@ function Page() {
 
     const revealed = Promise.all(answers.map(
       async (answer) => {
-        const { value: salted } = await clientPoller.invoke({
+        const { value: hash } = await clientPoller.invoke({
           uri,
-          method: 'saltValue',
+          method: 'saltAndHashGuess',
           args: {
             value: answer,
             ssalt: salt,
-          },
-        });
-
-        const { value: hash } = await clientPoller.invoke({
-          uri,
-          method: 'id',
-          args: {
-            value: salted,
           },
         });
 
@@ -1414,7 +1452,7 @@ function Page() {
       {!state.hasConnected ? (
         <button type="button" onClick={connectWallet}>connect wallet</button>
       ) : (
-        `moderator address: ${state.signer.address}`
+        `moderator address: ${state.signerAddress}`
       )}
 
       <br />

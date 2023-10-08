@@ -31,7 +31,7 @@ export default (env) => ({
       },
       {
         test: /\.(png|jp(e*)g|svg|gif)$/,
-        type: "asset/resource",
+        type: 'asset/resource',
       },
     ],
   },
@@ -43,8 +43,15 @@ export default (env) => ({
     new HtmlWebpackPlugin({
       template: './src/index.html',
     }),
+
+    new webpack.ProvidePlugin({
+      Buffer: ['buffer', 'Buffer'],
+    }),
   ],
   resolve: {
     extensions: ['.js', '.jsx', '.css'],
+    fallback: {
+      buffer: require.resolve('buffer/'),
+    },
   },
 });
