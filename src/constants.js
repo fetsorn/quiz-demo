@@ -9,3 +9,4 @@ export const addressQuizMC = "0x6ecB602d43Fcce758B870708651778d3A487d21f";
 export const addressProportional = "0x55B403B7e94cD922686Ff3b113fd263baEDCF333";
 export const addressToken = "0xA6D97Fd20899081f1f709fBe5856Aa1211099A83";
 export const rpc = "https://polygon-mumbai.blockpi.network/v1/rpc/public";
+export const wrapperURI = "";
